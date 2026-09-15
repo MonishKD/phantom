@@ -1,0 +1,5 @@
+#!/bin/bash
+# Runs after `git pull` / `git merge`.
+set -euo pipefail
+git rev-parse --verify -q ORIG_HEAD >/dev/null || exit 0
+exec "$(git rev-parse --show-toplevel)/scripts/hooks/lib-auto-install.sh" "ORIG_HEAD..HEAD"

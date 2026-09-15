@@ -1,0 +1,6 @@
+#!/bin/bash
+# Runs after `git checkout` / `git switch`. Args: previous HEAD, new HEAD, branch flag.
+set -euo pipefail
+[ "${3:-0}" = "1" ] || exit 0          # file checkout, not a branch switch
+[ "${1:-}" != "${2:-}" ] || exit 0     # same commit, nothing changed
+exec "$(git rev-parse --show-toplevel)/scripts/hooks/lib-auto-install.sh" "$1..$2"

@@ -25,6 +25,18 @@ scripts/install.sh --dock   # also pins it to the Dock
 
 After that it opens from Spotlight (⌘-Space, type "Phantom"), from Launchpad, or with `open -a Phantom`. Re-run the script after code changes to refresh the installed copy.
 
+### Keeping the installed copy current
+
+Nothing ties the installed app to the repo: pushing and pulling move commits, they don't rebuild anything. Either re-run `scripts/install.sh` yourself, or enable the repo's hooks once:
+
+```sh
+scripts/setup-hooks.sh      # undo with: git config --unset core.hooksPath
+```
+
+That points `core.hooksPath` at `scripts/hooks`. After a pull or a branch switch that touches `Sources/`, `helper/`, `Resources/`, `Package.swift` or `scripts/build.sh`, the app is rebuilt and reinstalled — but only when Phantom is already installed, so a fresh clone stays untouched. A running Phantom is quit first, which lets the helper restore the device's real location on the way out.
+
+Commits you make yourself don't trigger it, on the assumption you're already building as you work. To change that, add a `post-commit` hook calling `scripts/hooks/lib-auto-install.sh "HEAD~1..HEAD"`.
+
 On first launch the app offers a one-time **Install** step. It puts [pymobiledevice3](https://github.com/doronz88/pymobiledevice3) into `~/Library/Application Support/Phantom/venv`, using `uv` if you have it and `python3` otherwise. You can also run `scripts/bootstrap.sh` yourself.
 
 ## Using it
