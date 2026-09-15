@@ -16,6 +16,15 @@ scripts/build.sh          # builds dist/Phantom.app
 open dist/Phantom.app
 ```
 
+To keep it around like any other app, install it into Applications:
+
+```sh
+scripts/install.sh          # builds, then copies to /Applications
+scripts/install.sh --dock   # also pins it to the Dock
+```
+
+After that it opens from Spotlight (⌘-Space, type "Phantom"), from Launchpad, or with `open -a Phantom`. Re-run the script after code changes to refresh the installed copy.
+
 On first launch the app offers a one-time **Install** step. It puts [pymobiledevice3](https://github.com/doronz88/pymobiledevice3) into `~/Library/Application Support/Phantom/venv`, using `uv` if you have it and `python3` otherwise. You can also run `scripts/bootstrap.sh` yourself.
 
 ## Using it
