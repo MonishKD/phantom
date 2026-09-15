@@ -15,6 +15,9 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/Phantom" "$APP/Contents/MacOS/Phantom"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/helper/phantom_helper.py" "$ROOT/scripts/bootstrap.sh" "$APP/Contents/Resources/"
+if [ -f "$ROOT/Resources/AppIcon.icns" ]; then
+    cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+fi
 
 codesign --force --sign - "$APP" >/dev/null
 echo "Built $APP"

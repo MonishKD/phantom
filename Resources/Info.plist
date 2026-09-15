@@ -8,6 +8,8 @@
 	<string>Phantom</string>
 	<key>CFBundleExecutable</key>
 	<string>Phantom</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>local.phantom.app</string>
 	<key>CFBundleInfoDictionaryVersion</key>

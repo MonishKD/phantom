@@ -1,4 +1,9 @@
 # phantom
+
+<p align="center">
+  <img src="docs/phantom-mark.png" alt="Phantom" width="180">
+</p>
+
 spoof your location and movements.
 
 Phantom is a macOS app that sets your iPhone's or iPad's GPS location to wherever you click on a map. It works over a USB cable, and it doesn't need root or a jailbreak.
@@ -119,5 +124,14 @@ scripts/install.sh       builds, then installs into /Applications
 scripts/bootstrap.sh     installs the Python environment
 scripts/setup-hooks.sh   enables the auto-reinstall hooks
 scripts/hooks/           post-merge / post-checkout hooks
+scripts/make-icon.swift  draws the ghost mark
 Resources/Info.plist     app bundle metadata
+Resources/AppIcon.icns   app icon
+docs/phantom-mark.png    the mark, for this README
+```
+
+The icon is vector artwork drawn in code, so it stays crisp at every size. After editing `scripts/make-icon.swift`, regenerate it with:
+
+```sh
+swift scripts/make-icon.swift && iconutil -c icns Resources/AppIcon.iconset -o Resources/AppIcon.icns
 ```
