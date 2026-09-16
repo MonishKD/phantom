@@ -7,7 +7,7 @@ Protocol (newline-delimited JSON):
           {"event": "devices", "devices": [...]}  |  {"event": "status", "status": {...}}
   stderr  human-readable logging
 
-Commands: hello, list, set, clear, pair, reveal_developer_mode, shutdown.
+Commands: hello, list, set, clear, pair, shutdown.
 
 How a location reaches the device:
   iOS 17+   CoreDevice, over an RSD tunnel: the com.apple.coredevice.feature.simulatelocation
@@ -435,6 +435,7 @@ class Helper:
         self._last_detail_refresh = 0.0
         self._refresh_lock: Optional[asyncio.Lock] = None
         self._tasks: set[asyncio.Task] = set()
+        self._revealed_developer_mode: set[str] = set()
 
     async def run(self) -> None:
         loop = asyncio.get_running_loop()
@@ -511,14 +512,6 @@ class Helper:
             lockdown = await create_using_usbmux(serial=udid, autopair=True, pair_timeout=PAIR_TIMEOUT)
             await lockdown.close()
             return {"devices": await self._refresh_devices(force=True)}
-        if cmd == "reveal_developer_mode":
-            udid = self._require_udid(request)
-            lockdown = await create_using_usbmux(serial=udid, autopair=True, pair_timeout=PAIR_TIMEOUT)
-            try:
-                await AmfiService(lockdown).reveal_developer_mode_option_in_ui()
-            finally:
-                await lockdown.close()
-            return None
         raise HelperError("BAD_REQUEST", f"Unknown command: {cmd!r}")
 
     @staticmethod
@@ -597,8 +590,7 @@ class Helper:
                 emit({"event": "devices", "devices": list(refreshed.values())})
             return list(refreshed.values())
 
-    @staticmethod
-    async def _describe(mux_device: Any) -> dict[str, Any]:
+    async def _describe(self, mux_device: Any) -> dict[str, Any]:
         info: dict[str, Any] = {
             "udid": mux_device.serial,
             "name": "",
@@ -629,6 +621,15 @@ class Helper:
             if lockdown.paired and Version(lockdown.product_version).major >= 16:
                 with suppress(Exception):
                     info["developer_mode"] = await lockdown.get_developer_mode_status()
+                if info["developer_mode"] is False and mux_device.serial not in self._revealed_developer_mode:
+                    # Settings hides the Developer Mode switch until a developer tool asks for it,
+                    # so ask once per device rather than making the user press a button.
+                    self._revealed_developer_mode.add(mux_device.serial)
+                    try:
+                        await AmfiService(lockdown).reveal_developer_mode_option_in_ui()
+                        logger.info("%s: revealed the Developer Mode switch in Settings", mux_device.serial)
+                    except Exception as exc:
+                        logger.info("%s: couldn't reveal the Developer Mode switch: %r", mux_device.serial, exc)
             elif lockdown.paired:
                 info["developer_mode"] = True  # Developer Mode doesn't exist before iOS 16
         finally:

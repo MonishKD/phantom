@@ -47,7 +47,7 @@ The first launch shows an **Install** card. Click it. That puts [pymobiledevice3
 
 1. Plug it into the Mac with a cable and unlock it.
 2. Tap **Trust** when it asks, and enter the passcode. It then appears in Phantom's sidebar.
-3. If the sidebar says Developer Mode is off, click **Show the Developer Mode Switch**. On the device, go to Settings › Privacy & Security › Developer Mode and turn it on. The device restarts, then asks you to confirm.
+3. If Developer Mode is off, the sidebar walks you through it: Settings › Privacy & Security › Developer Mode, switch it on, and confirm once the device restarts. Phantom makes the switch appear in Settings for you.
 
 That's it. Clicking the map now moves the device.
 
@@ -56,7 +56,7 @@ That's it. Clicking the map now moves the device.
 1. Connect the device, unlock it, and open Phantom.
 2. **Click anywhere on the map** to move the device there. You can also search for a place, paste coordinates like `48.8584, 2.2945`, or pick from **Recent**.
 3. Turn off **Instant** if you'd rather drop a pin first and press **Teleport Here** yourself.
-4. Click **Restore Real Location** when you're done. Quitting Phantom also restores it.
+4. Click **Restore Real Location** when you're done; it takes a few seconds. Quitting Phantom also restores it.
 
 The first teleport after connecting takes a few seconds while Phantom mounts the disk image and opens a tunnel. Each click after that applies immediately.
 

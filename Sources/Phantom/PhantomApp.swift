@@ -32,7 +32,7 @@ struct PhantomApp: App {
                 .environmentObject(installer)
                 .frame(minWidth: 960, minHeight: 620)
         }
-        .windowToolbarStyle(.unified(showsTitle: true))
+        .windowStyle(.hiddenTitleBar)
     }
 }
 
@@ -40,6 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor static weak var bridge: DeviceBridge?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Jet black throughout: system controls, menus and popovers follow the dark appearance.
+        NSApp.appearance = NSAppearance(named: .darkAqua)
         NSApp.setActivationPolicy(.regular)
         NSApp.activate()
     }

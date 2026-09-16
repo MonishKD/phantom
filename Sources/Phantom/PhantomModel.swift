@@ -8,6 +8,9 @@ final class PhantomModel: ObservableObject {
     @Published var camera: MapCameraPosition = .automatic
     @Published private(set) var isTeleporting = false
     @Published var showActivity = false
+    /// Last settled map region, for the zoom buttons. Not published: it changes on every pan.
+    var visibleRegion: MKCoordinateRegion?
+    var hasCenteredOnDevice = false
 
     private let bridge: DeviceBridge
     private let recents: RecentPlaces
@@ -17,6 +20,16 @@ final class PhantomModel: ObservableObject {
     init(bridge: DeviceBridge, recents: RecentPlaces) {
         self.bridge = bridge
         self.recents = recents
+        // Start from a fixed region, never `.automatic`: an automatic camera re-fits to the map's
+        // content, so the first pin dropped would zoom all the way into a single building.
+        let start = recents.places.first.map {
+            MKCoordinateRegion(center: $0.coordinate, latitudinalMeters: 20_000, longitudinalMeters: 20_000)
+        } ?? MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 30, longitude: -40),
+            span: MKCoordinateSpan(latitudeDelta: 100, longitudeDelta: 200)
+        )
+        camera = .region(start)
+        visibleRegion = start
     }
 
     /// Drops the pin at `coordinate` and, if asked, moves the device there right away.
@@ -38,6 +51,18 @@ final class PhantomModel: ObservableObject {
     func fly(to coordinate: CLLocationCoordinate2D) {
         withAnimation(.easeInOut(duration: 0.8)) {
             camera = .region(MKCoordinateRegion(center: coordinate, latitudinalMeters: 3000, longitudinalMeters: 3000))
+        }
+    }
+
+    /// Zooms around the visible centre; a factor below 1 zooms in.
+    func zoom(by factor: Double) {
+        guard let region = visibleRegion else { return }
+        let span = MKCoordinateSpan(
+            latitudeDelta: min(max(region.span.latitudeDelta * factor, 0.0005), 150),
+            longitudeDelta: min(max(region.span.longitudeDelta * factor, 0.0005), 300)
+        )
+        withAnimation(.easeInOut(duration: 0.3)) {
+            camera = .region(MKCoordinateRegion(center: region.center, span: span))
         }
     }
 

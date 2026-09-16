@@ -22,6 +22,12 @@ final class DeviceBridge: ObservableObject {
     @Published var lastError: HelperFailure?
     @Published private(set) var log: [String] = []
     @Published private(set) var isRestoring = false
+    @Published private(set) var restoreNotice: RestoreNotice?
+
+    enum RestoreNotice {
+        case restoring
+        case restored
+    }
 
     private var process: Process?
     private var helperInput: FileHandle?
@@ -186,24 +192,25 @@ final class DeviceBridge: ObservableObject {
         return report(reply) && reply.superseded != true
     }
 
-    /// Clearing reconnects when needed, so it can take a few seconds and reports failures.
+    /// Clearing can take a few seconds (it may have to reconnect first), so a notice covers the wait.
     func restoreRealLocation() async {
         guard let udid = selectedUDID else { return }
         isRestoring = true
-        defer { isRestoring = false }
-        report(await send(["cmd": "clear", "udid": udid]))
+        restoreNotice = .restoring
+        let restored = report(await send(["cmd": "clear", "udid": udid]))
+        isRestoring = false
+        guard restored else {
+            restoreNotice = nil  // the error banner takes over
+            return
+        }
+        restoreNotice = .restored
+        try? await Task.sleep(for: .seconds(2.5))
+        if restoreNotice == .restored { restoreNotice = nil }
     }
 
     func pair() async {
         guard let udid = selectedUDID else { return }
         report(await send(["cmd": "pair", "udid": udid]))
-    }
-
-    func revealDeveloperMode() async {
-        guard let udid = selectedUDID else { return }
-        if report(await send(["cmd": "reveal_developer_mode", "udid": udid])) {
-            appendLog("Developer Mode switch revealed: open Settings › Privacy & Security on the \(selectedDevice?.noun ?? "device").")
-        }
     }
 
     func refreshDevices() async {

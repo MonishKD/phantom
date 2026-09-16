@@ -41,10 +41,21 @@ struct DeviceInfo: Decodable, Identifiable, Hashable {
         }
     }
 
-    var subtitle: String {
-        [model, iosVersion.map { "iOS \($0)" }, connection == "USB" ? "USB" : "Wi-Fi"]
+    /// For example "iPadOS 27.0 · USB".
+    var systemAndConnection: String {
+        [iosVersion.map { "\(osName) \($0)" }, connection == "USB" ? "USB" : "Wi-Fi"]
             .compactMap { $0 }
             .joined(separator: " · ")
+    }
+
+    private var osName: String {
+        switch deviceClass {
+        case "iPad": "iPadOS"
+        case "AppleTV": "tvOS"
+        case "Watch": "watchOS"
+        case "RealityDevice": "visionOS"
+        default: "iOS"
+        }
     }
 }
 

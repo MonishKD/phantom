@@ -5,31 +5,61 @@ struct Sidebar: View {
     @EnvironmentObject private var recents: RecentPlaces
 
     var body: some View {
-        List {
-            Section("Device") {
-                DevicePanel()
-            }
-            Section("Go To") {
-                SearchPanel()
-            }
-            if !recents.places.isEmpty {
-                Section {
-                    ForEach(recents.places) { place in
-                        RecentRow(place: place)
+        VStack(spacing: 0) {
+            SidebarHeader()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 26) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        SectionLabel("Device")
+                        DevicePanel()
                     }
-                } header: {
-                    HStack {
-                        Text("Recent")
-                        Spacer()
-                        Button("Clear") { recents.clear() }
-                            .buttonStyle(.borderless)
-                            .font(.caption)
+                    VStack(alignment: .leading, spacing: 10) {
+                        SectionLabel("Go To")
+                        SearchPanel()
+                    }
+                    if !recents.places.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            SectionLabel(title: "Recent") {
+                                Button("Clear") { recents.clear() }
+                                    .buttonStyle(PhantomLinkStyle())
+                            }
+                            VStack(spacing: 1) {
+                                ForEach(recents.places) { place in
+                                    RecentRow(place: place)
+                                }
+                            }
+                            .padding(.horizontal, -10)
+                        }
                     }
                 }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 20)
             }
+            .scrollIndicators(.never)
+            SidebarFooter()
         }
-        .listStyle(.sidebar)
-        .safeAreaInset(edge: .bottom) { SidebarFooter() }
+        .background(Theme.background)
+    }
+}
+
+struct SidebarHeader: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            PhantomLogo(size: 26)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("PHANTOM")
+                    .font(.system(size: 15, weight: .heavy))
+                    .tracking(3.4)
+                    .foregroundStyle(Theme.textPrimary)
+                Text("Location for iPhone & iPad")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 46)  // clears the window's traffic lights
+        .padding(.bottom, 22)
     }
 }
 
@@ -41,46 +71,76 @@ struct DevicePanel: View {
     var body: some View {
         switch bridge.helperState {
         case .stopped, .starting:
-            Label {
-                Text("Starting device helper…")
-            } icon: {
+            HStack(spacing: 10) {
                 ProgressView().controlSize(.small)
+                Text("Starting device helper…")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Theme.textSecondary)
             }
+            .phantomCard()
         case .notInstalled:
-            Label("Finish the one-time setup to connect your iPhone or iPad.", systemImage: "shippingbox")
-                .foregroundStyle(.secondary)
+            Text("Finish the one-time setup to connect your iPhone or iPad.")
+                .font(.system(size: 12.5))
+                .foregroundStyle(Theme.textSecondary)
+                .phantomCard()
         case .failed(let message):
-            VStack(alignment: .leading, spacing: 8) {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Theme.danger)
+                    Text(message)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Theme.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Button("Restart Helper") { bridge.restart() }
+                    .buttonStyle(PhantomButtonStyle(kind: .secondary))
             }
+            .phantomCard()
         case .running:
             if bridge.devices.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Label("No device connected", systemImage: "cable.connector")
-                        .font(.headline)
-                    Text("Plug your iPhone or iPad into this Mac with a cable, unlock it, and tap **Trust** if asked.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    Button("Refresh") { Task { await bridge.refreshDevices() } }
-                        .buttonStyle(.link)
-                }
-                .padding(.vertical, 4)
+                NoDeviceCard()
             } else {
-                if bridge.devices.count > 1 {
-                    Picker("Device", selection: $bridge.selectedUDID) {
-                        ForEach(bridge.devices) { device in
-                            Text(device.displayName).tag(Optional(device.udid))
+                VStack(spacing: 8) {
+                    if bridge.devices.count > 1 {
+                        Picker("Device", selection: $bridge.selectedUDID) {
+                            ForEach(bridge.devices) { device in
+                                Text(device.displayName).tag(Optional(device.udid))
+                            }
                         }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
                     }
-                    .labelsHidden()
-                }
-                if let device = bridge.selectedDevice {
-                    DeviceCard(device: device, status: bridge.selectedStatus)
+                    if let device = bridge.selectedDevice {
+                        DeviceCard(device: device, status: bridge.selectedStatus)
+                    }
                 }
             }
         }
+    }
+}
+
+struct NoDeviceCard: View {
+    @EnvironmentObject private var bridge: DeviceBridge
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "cable.connector")
+                    .font(.system(size: 15))
+                    .foregroundStyle(Theme.textSecondary)
+                Text("No device connected")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+            }
+            Text("Plug your iPhone or iPad into this Mac with a cable, unlock it, and tap **Trust** if asked.")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Refresh") { Task { await bridge.refreshDevices() } }
+                .buttonStyle(PhantomLinkStyle())
+        }
+        .phantomCard()
     }
 }
 
@@ -90,63 +150,138 @@ struct DeviceCard: View {
     let status: SessionStatus?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
                 Image(systemName: device.icon)
-                    .font(.title2)
-                    .foregroundStyle(.tint)
+                    .font(.system(size: 19))
+                    .foregroundStyle(Theme.textPrimary)
+                    .frame(width: 42, height: 42)
+                    .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(device.displayName)
-                        .font(.headline)
+                        .font(.system(size: 13.5, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
-                    Text(device.subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    if let model = device.model {
+                        Text(model)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.textSecondary)
+                            .lineLimit(1)
+                    }
+                    Text(device.systemAndConnection)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.textTertiary)
+                        .lineLimit(1)
                 }
+                Spacer(minLength: 0)
             }
 
-            StatusRow(status: status, noun: device.noun)
+            StatusRow(status: status, noun: device.noun, waitingForDeveloperMode: device.paired && device.developerMode == false)
 
             if !device.paired {
-                Notice(systemImage: "lock", text: "Unlock your \(device.noun) and tap **Trust** to pair it with this Mac.") {
+                Callout(icon: "lock.fill", tint: Theme.warning) {
+                    Text("Unlock your \(device.noun) and tap **Trust** to pair it with this Mac.")
                     Button("Pair Now") { Task { await bridge.pair() } }
+                        .buttonStyle(PhantomButtonStyle(kind: .secondary))
                 }
             } else if device.developerMode == false {
-                Notice(
-                    systemImage: "hammer",
-                    text: "Turn on **Developer Mode** in Settings › Privacy & Security, let the \(device.noun) restart, then confirm."
-                ) {
-                    Button("Show the Developer Mode Switch") { Task { await bridge.revealDeveloperMode() } }
-                }
+                DeveloperModeGuide(noun: device.noun)
             }
 
             if let problem = device.problem {
                 Text(problem)
-                    .font(.caption)
-                    .foregroundStyle(.orange)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.warning)
             }
         }
-        .padding(.vertical, 4)
+        .phantomCard()
+    }
+}
+
+/// How to switch Developer Mode on. The helper reveals the switch in Settings on its own.
+struct DeveloperModeGuide: View {
+    let noun: String
+
+    var body: some View {
+        Callout(icon: "hammer.fill", tint: Theme.warning) {
+            Text("Turn on Developer Mode")
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary)
+            VStack(alignment: .leading, spacing: 7) {
+                step(1, "Open **Settings › Privacy & Security** on the \(noun).")
+                step(2, "Scroll to the bottom, tap **Developer Mode**, and switch it on.")
+                step(3, "Tap **Restart**. When the \(noun) is back, unlock it and tap **Turn On**.")
+            }
+            Text("Don't see Developer Mode? Keep the \(noun) connected to this Mac, then close and reopen Settings.")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func step(_ number: Int, _ text: LocalizedStringKey) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("\(number)")
+                .font(.system(size: 9.5, weight: .bold))
+                .foregroundStyle(Color.black)
+                .frame(width: 16, height: 16)
+                .background(Theme.warning, in: Circle())
+            Text(text)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+struct Callout<Content: View>: View {
+    let icon: String
+    let tint: Color
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 16)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 9) {
+                content
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(Theme.textSecondary)
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(tint.opacity(0.07), in: shape)
+        .overlay(shape.strokeBorder(tint.opacity(0.28), lineWidth: 1))
     }
 }
 
 struct StatusRow: View {
     let status: SessionStatus?
     let noun: String
+    var waitingForDeveloperMode = false
 
     var body: some View {
         let phase = status?.phase ?? .idle
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            if phase.isWorking {
-                ProgressView().controlSize(.mini)
-            } else {
-                Circle()
-                    .fill(phase.color)
-                    .frame(width: 8, height: 8)
+        let waiting = waitingForDeveloperMode && phase == .idle
+        let dot = waiting ? Theme.warning : phase.color
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Group {
+                if phase.isWorking {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Circle()
+                        .fill(dot)
+                        .frame(width: 7, height: 7)
+                        .shadow(color: dot.opacity(phase == .active || waiting ? 0.9 : 0), radius: 4)
+                }
             }
-            Text(status?.message ?? phase.defaultMessage(noun))
-                .font(.callout)
-                .foregroundStyle(phase == .error ? Color.red : Color.primary)
+            .frame(width: 14)
+            Text(waiting ? "Waiting for Developer Mode" : (status?.message ?? phase.defaultMessage(noun)))
+                .font(.system(size: 12))
+                .foregroundStyle(phase == .error ? Theme.danger : Theme.textSecondary)
                 .lineLimit(4)
         }
     }
@@ -162,10 +297,10 @@ extension SessionPhase {
 
     var color: Color {
         switch self {
-        case .active: .green
-        case .error: .red
-        case .reconnecting: .orange
-        default: .secondary
+        case .active: Theme.success
+        case .error: Theme.danger
+        case .reconnecting: Theme.warning
+        default: Theme.textTertiary
         }
     }
 
@@ -182,26 +317,6 @@ extension SessionPhase {
     }
 }
 
-struct Notice<Actions: View>: View {
-    let systemImage: String
-    let text: LocalizedStringKey
-    @ViewBuilder var actions: Actions
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label {
-                Text(text).font(.callout)
-            } icon: {
-                Image(systemName: systemImage).foregroundStyle(.orange)
-            }
-            actions.controlSize(.small)
-        }
-        .padding(8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
-    }
-}
-
 // MARK: - Search
 
 struct SearchPanel: View {
@@ -211,39 +326,71 @@ struct SearchPanel: View {
     @AppStorage("teleportOnClick") private var teleportOnClick = true
 
     var body: some View {
-        TextField("Search a place or paste “lat, lon”", text: $search.query)
-            .textFieldStyle(.roundedBorder)
-            .onSubmit(submit)
-
-        if let coordinate = search.typedCoordinate {
-            Button {
-                go(to: coordinate, name: nil)
-            } label: {
-                Label(coordinate.formatted, systemImage: "scope")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+        VStack(alignment: .leading, spacing: 4) {
+            let field = RoundedRectangle(cornerRadius: 10, style: .continuous)
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.textTertiary)
+                TextField("Search a place or paste lat, lon", text: $search.query)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.textPrimary)
+                    .onSubmit(submit)
+                if !search.query.isEmpty {
+                    Button {
+                        search.clear()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.textTertiary)
+                }
             }
-            .buttonStyle(.plain)
-        }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 9)
+            .background(Theme.surface, in: field)
+            .overlay(field.strokeBorder(Theme.border, lineWidth: 1))
 
-        ForEach(search.completions, id: \.self) { completion in
-            Button {
-                Task { await pick(completion) }
-            } label: {
+            VStack(spacing: 1) {
+                if let coordinate = search.typedCoordinate {
+                    resultRow(icon: "scope", title: coordinate.formatted, subtitle: "Coordinates") {
+                        go(to: coordinate, name: nil)
+                    }
+                }
+                ForEach(search.completions, id: \.self) { completion in
+                    resultRow(icon: "mappin.circle", title: completion.title, subtitle: completion.subtitle) {
+                        Task { await pick(completion) }
+                    }
+                }
+            }
+            .padding(.top, 2)
+        }
+    }
+
+    private func resultRow(icon: String, title: String, subtitle: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.accent)
+                    .frame(width: 16)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(completion.title).lineLimit(1)
-                    if !completion.subtitle.isEmpty {
-                        Text(completion.subtitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    Text(title)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
+                    if !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.textTertiary)
                             .lineLimit(1)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .modifier(HoverRow())
         }
+        .buttonStyle(.plain)
     }
 
     private func submit() {
@@ -279,14 +426,22 @@ struct RecentRow: View {
         Button {
             model.choose(place.coordinate, name: place.name, teleport: teleportOnClick && bridge.canTeleport, flyTo: true)
         } label: {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(place.name).lineLimit(1)
-                Text(place.coordinate.formatted)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textTertiary)
+                    .frame(width: 16)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(place.name)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
+                    Text(place.coordinate.formatted)
+                        .font(.system(size: 10.5, design: .monospaced))
+                        .foregroundStyle(Theme.textTertiary)
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+            .modifier(HoverRow())
         }
         .buttonStyle(.plain)
         .contextMenu {
@@ -299,25 +454,23 @@ struct SidebarFooter: View {
     @EnvironmentObject private var bridge: DeviceBridge
 
     var body: some View {
-        VStack(spacing: 0) {
-            Divider()
-            Button {
-                Task { await bridge.restoreRealLocation() }
-            } label: {
-                HStack(spacing: 6) {
-                    if bridge.isRestoring {
-                        ProgressView().controlSize(.small)
-                    }
-                    Label("Restore Real Location", systemImage: "location.slash")
-                }
-                .frame(maxWidth: .infinity)
+        Button {
+            Task { await bridge.restoreRealLocation() }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "location.slash.fill")
+                Text("Restore Real Location")
             }
-            .controlSize(.large)
-            // Stays available whenever a device is connected: the device can still be simulating a
-            // location this run never set, and the app can't know that until it asks.
-            .disabled(!bridge.canTeleport || bridge.isRestoring)
-            .padding(12)
+            .padding(.vertical, 3)
         }
-        .background(.bar)
+        .buttonStyle(PhantomButtonStyle(kind: .secondary, fullWidth: true))
+        // Stays available whenever a device is connected: the device can still be simulating a
+        // location this run never set, and the app can't know that until it asks.
+        .disabled(!bridge.canTeleport || bridge.isRestoring)
+        .padding(16)
+        .background(Theme.background)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Theme.border).frame(height: 1)
+        }
     }
 }
