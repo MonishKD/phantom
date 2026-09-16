@@ -103,7 +103,9 @@ On the device, turn Developer Mode back off in Settings › Privacy & Security. 
 The app is SwiftUI with MapKit. It runs `helper/phantom_helper.py`, which talks to the device through pymobiledevice3 and exchanges JSON lines with the app over stdin and stdout. The helper reports each device's type, so the app names it ("iPhone", "iPad", …) and picks a matching icon.
 
 - **iOS 17 and later:** the helper mounts the personalized developer disk image and opens an RSD tunnel. It tries Apple's own `remoted` tunnel first, then an in-process userspace tunnel, then a running `tunneld`; the first two need no root. Setting and clearing then both go through CoreDevice's `simulatelocation` feature (`setsimulatedlocation` and `clearsimulatedlocation`). They have to use the same subsystem: a location set through the older DVT instruments service is tracked separately, and CoreDevice's clear reports success without actually releasing it.
-- **iOS 16 and earlier:** the helper mounts the classic developer disk image and uses `com.apple.dt.simulatelocation`.
+- **iOS 16 and earlier:** the helper mounts the classic developer disk image and uses `com.apple.dt.simulatelocation`, which keeps the location after the connection closes.
+
+Either way, apps on the device receive the location through CoreLocation, marked as simulated. `simctl location` is the equivalent for the iOS Simulator; it needs full Xcode and can't reach physical devices, so Phantom doesn't use it.
 
 ## Troubleshooting
 

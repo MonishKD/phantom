@@ -9,9 +9,18 @@ Protocol (newline-delimited JSON):
 
 Commands: hello, list, set, clear, pair, reveal_developer_mode, shutdown.
 
-iOS 17+ location simulation runs over DVT inside an RSD tunnel and only lasts while that
-connection is open, so each device gets a long-lived Session that holds it, re-applies the
-location periodically, and reconnects when the cable or tunnel drops.
+How a location reaches the device:
+  iOS 17+   CoreDevice, over an RSD tunnel: the com.apple.coredevice.feature.simulatelocation
+            feature's setsimulatedlocation / clearsimulatedlocation actions. Set and clear must
+            both go through CoreDevice; the DVT instruments service tracks a separate location
+            that CoreDevice's clear doesn't release.
+  iOS <17   com.apple.dt.simulatelocation over lockdown, once the developer disk image is mounted.
+Apps then receive it through CoreLocation, flagged as simulated
+(CLLocationSourceInformation.isSimulatedBySoftware). `simctl location` is the Simulator's
+equivalent and doesn't reach physical devices.
+
+Each device gets a Session that keeps its connection, re-sends the location periodically, and
+reconnects when the cable or tunnel drops.
 """
 
 from __future__ import annotations
@@ -20,7 +29,9 @@ import asyncio
 import importlib.metadata
 import json
 import logging
+import math
 import os
+import struct
 import sys
 import threading
 from contextlib import suppress
@@ -77,7 +88,6 @@ try:
     from pymobiledevice3.remote.core_device.location_service import LocationService
     from pymobiledevice3.services.amfi import AmfiService
     from pymobiledevice3.services.mobile_image_mounter import auto_mount, fetch_personalized_ddi
-    from pymobiledevice3.services.simulate_location import DtSimulateLocation
     from pymobiledevice3.tunneld.api import get_tunneld_device_by_udid
 except ImportError as import_error:
     emit({
@@ -106,6 +116,43 @@ class HelperError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+class LegacyLocationSimulation:
+    """``com.apple.dt.simulatelocation`` for iOS 16 and earlier, reached over lockdown.
+
+    Implemented here rather than with pymobiledevice3's ``DtSimulateLocation``, which never closes
+    the connection it opens for each command and formats coordinates with ``str()``, so a value
+    like 0.00001 goes out as "1e-05". The device keeps the location after the connection closes.
+    """
+
+    SERVICE_NAME = "com.apple.dt.simulatelocation"
+    START, STOP = 0, 1
+
+    def __init__(self, lockdown: Any) -> None:
+        self.lockdown = lockdown
+
+    @staticmethod
+    def encode_set(latitude: float, longitude: float) -> bytes:
+        """START, then each coordinate as length-prefixed fixed-point text (big-endian lengths)."""
+        payload = struct.pack(">I", LegacyLocationSimulation.START)
+        for value in (latitude, longitude):
+            text = f"{value:.7f}".encode()
+            payload += struct.pack(">I", len(text)) + text
+        return payload
+
+    async def set(self, latitude: float, longitude: float) -> None:
+        await self._send(self.encode_set(latitude, longitude))
+
+    async def clear(self) -> None:
+        await self._send(struct.pack(">I", self.STOP))
+
+    async def _send(self, payload: bytes) -> None:
+        service = await self.lockdown.start_lockdown_developer_service(self.SERVICE_NAME)
+        try:
+            await service.sendall(payload)  # drains before returning
+        finally:
+            await service.close()
 
 
 def classify(exc: BaseException, noun: str = "device") -> tuple[str, str]:
@@ -158,7 +205,7 @@ class Session:
         self._tunnel = None  # NativeRemotedTunnel | UserspaceRsdTunnel
         self._tunneld_rsd = None  # RSD borrowed from a running tunneld; ours to close
         self._rsd = None  # CoreDevice RSD, iOS 17+
-        self._location = None  # DtSimulateLocation, iOS 16 and earlier
+        self._location = None  # LegacyLocationSimulation, iOS 16 and earlier
 
     @property
     def _connected(self) -> bool:
@@ -198,11 +245,7 @@ class Session:
                     # No live connection — a relaunched app, or a session that dropped. Open one
                     # anyway so a location left over from an earlier run can still be cleared.
                     await self._open()
-                if self._rsd is not None:
-                    await self._core_device(CLEAR_SIMULATED_LOCATION_ACTION, {})
-                else:
-                    await asyncio.wait_for(self._location.clear(), DEVICE_CALL_TIMEOUT)
-                    await asyncio.sleep(0.3)  # the stop expects no reply; let it flush
+                await self._clear_now()
             except Exception as exc:
                 await self._close()
                 self._status("error", classify(exc, self.noun)[1])
@@ -213,8 +256,8 @@ class Session:
 
     async def keepalive(self) -> None:
         """Re-sends the location; reconnects and re-applies it if the connection dropped."""
-        if self.target is None or self.lock.locked() or (self._location is not None and self._rsd is None):
-            return  # the pre-iOS 17 service keeps the location on its own; re-sending just leaks connections
+        if self.target is None or self.lock.locked() or self._location is not None:
+            return  # the pre-iOS 17 service keeps the location on its own; nothing to refresh
         async with self.lock:
             if self.target is None:
                 return
@@ -233,13 +276,24 @@ class Session:
                 self._status("reconnecting", f"Connection lost: {reason} Retrying…")
 
     async def shutdown(self) -> None:
+        """Best-effort restore when the app quits, over a connection that's already open: opening
+        a new one can take longer than the app waits before terminating the helper."""
         async with self.lock:
-            if self.target is not None and self._location is not None:
-                with suppress(Exception):
-                    await asyncio.wait_for(self._location.clear(), 3)
-                    await asyncio.sleep(0.3)
+            if self.target is not None and self._connected:
+                try:
+                    await asyncio.wait_for(self._clear_now(), 3)
+                    logger.info("%s restored to its real location on quit", self.udid)
+                except Exception as exc:
+                    logger.warning("%s: couldn't restore the location on quit: %r", self.udid, exc)
             self.target = None
             await self._close()
+
+    async def _clear_now(self) -> None:
+        """Sends the clear through whichever service this connection uses. Caller holds the lock."""
+        if self._rsd is not None:
+            await self._core_device(CLEAR_SIMULATED_LOCATION_ACTION, {})
+        else:
+            await asyncio.wait_for(self._location.clear(), DEVICE_CALL_TIMEOUT)
 
     async def _core_device(self, action: str, payload: dict[str, Any]) -> Any:
         """Invoke a CoreDevice location action (iOS 17+), opening a short-lived service for it."""
@@ -257,7 +311,7 @@ class Session:
     # -- connection management (callers hold the lock) --
 
     async def _apply_with_reconnect(self) -> None:
-        was_connected = self._location is not None
+        was_connected = self._connected
         try:
             await self._apply()
         except Exception as exc:
@@ -303,7 +357,7 @@ class Session:
 
         if version < Version("17.0"):
             # The classic service keeps the location after disconnecting; no tunnel needed.
-            self._location = DtSimulateLocation(self._lockdown)
+            self._location = LegacyLocationSimulation(self._lockdown)
             return
 
         self._status("tunneling")
@@ -480,9 +534,10 @@ class Helper:
             latitude, longitude = float(request["lat"]), float(request["lon"])
         except (KeyError, TypeError, ValueError):
             raise HelperError("INVALID_COORDINATE", "Latitude and longitude must be numbers.") from None
-        if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+        if not (-90 <= latitude <= 90) or not math.isfinite(longitude):
             raise HelperError("INVALID_COORDINATE", f"{latitude}, {longitude} is outside the valid range.")
-        return latitude, longitude
+        # A map panned across the antimeridian can report longitudes past ±180; wrap them back.
+        return latitude, (longitude + 180.0) % 360.0 - 180.0
 
     # -- device discovery --
 
