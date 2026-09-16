@@ -60,7 +60,7 @@ That's it. Clicking the map now moves the device.
 
 The first teleport after connecting takes a few seconds while Phantom mounts the disk image and opens a tunnel. Each click after that applies immediately.
 
-On iOS 17 and later the simulated location lasts only while Phantom is running, so leave it open. It re-sends the location every 15 seconds and reconnects by itself if the cable or tunnel drops.
+Leave Phantom open while you need the location: it clears the simulation when you quit, re-sends the location every 15 seconds, and reconnects by itself if the cable or tunnel drops.
 
 ## Good to know before you use it
 
@@ -102,7 +102,7 @@ On the device, turn Developer Mode back off in Settings › Privacy & Security. 
 
 The app is SwiftUI with MapKit. It runs `helper/phantom_helper.py`, which talks to the device through pymobiledevice3 and exchanges JSON lines with the app over stdin and stdout. The helper reports each device's type, so the app names it ("iPhone", "iPad", …) and picks a matching icon.
 
-- **iOS 17 and later:** the helper mounts the personalized developer disk image and opens an RSD tunnel. It tries Apple's own `remoted` tunnel first, then an in-process userspace tunnel, then a running `tunneld`; the first two need no root. It then drives the Instruments `LocationSimulation` service. That connection has to stay open for the location to hold, which is why the helper keeps it alive and reconnects.
+- **iOS 17 and later:** the helper mounts the personalized developer disk image and opens an RSD tunnel. It tries Apple's own `remoted` tunnel first, then an in-process userspace tunnel, then a running `tunneld`; the first two need no root. Setting and clearing then both go through CoreDevice's `simulatelocation` feature (`setsimulatedlocation` and `clearsimulatedlocation`). They have to use the same subsystem: a location set through the older DVT instruments service is tracked separately, and CoreDevice's clear reports success without actually releasing it.
 - **iOS 16 and earlier:** the helper mounts the classic developer disk image and uses `com.apple.dt.simulatelocation`.
 
 ## Troubleshooting

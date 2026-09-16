@@ -74,9 +74,8 @@ try:
         UserspaceTunnelUnavailableError,
     )
     from pymobiledevice3.lockdown import create_using_usbmux
+    from pymobiledevice3.remote.core_device.location_service import LocationService
     from pymobiledevice3.services.amfi import AmfiService
-    from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
-    from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
     from pymobiledevice3.services.mobile_image_mounter import auto_mount, fetch_personalized_ddi
     from pymobiledevice3.services.simulate_location import DtSimulateLocation
     from pymobiledevice3.tunneld.api import get_tunneld_device_by_udid
@@ -93,6 +92,13 @@ DEVICE_POLL_INTERVAL = 2
 DETAIL_REFRESH_INTERVAL = 8  # re-read unpaired / Developer Mode-off devices so the UI notices changes
 DEVICE_CALL_TIMEOUT = 20
 TUNNEL_TIMEOUT = 45
+
+# CoreDevice's location feature, used for both set and clear on iOS/iPadOS 17+. The older DVT
+# instruments service can also set a location, but the two track separate state: a DVT-set location
+# is not the one CoreDevice clears, so mixing them leaves a fix that nothing can turn off.
+SIMULATE_LOCATION_FEATURE = "com.apple.coredevice.feature.simulatelocation"
+SET_SIMULATED_LOCATION_ACTION = "com.apple.coredevice.action.setsimulatedlocation"
+CLEAR_SIMULATED_LOCATION_ACTION = "com.apple.coredevice.action.clearsimulatedlocation"
 
 
 class HelperError(Exception):
@@ -151,8 +157,12 @@ class Session:
         self._lockdown = None
         self._tunnel = None  # NativeRemotedTunnel | UserspaceRsdTunnel
         self._tunneld_rsd = None  # RSD borrowed from a running tunneld; ours to close
-        self._dvt: Optional[DvtProvider] = None
-        self._location = None  # LocationSimulation (iOS 17+) | DtSimulateLocation (older)
+        self._rsd = None  # CoreDevice RSD, iOS 17+
+        self._location = None  # DtSimulateLocation, iOS 16 and earlier
+
+    @property
+    def _connected(self) -> bool:
+        return self._rsd is not None or self._location is not None
 
     @property
     def noun(self) -> str:
@@ -182,29 +192,37 @@ class Session:
         async with self.lock:
             self.latest_request += 1  # drop any queued teleports
             self.target = None
-            if self._location is not None:
-                try:
+            self._status("connecting", "Restoring the real location…")
+            try:
+                if not self._connected:
+                    # No live connection — a relaunched app, or a session that dropped. Open one
+                    # anyway so a location left over from an earlier run can still be cleared.
+                    await self._open()
+                if self._rsd is not None:
+                    await self._core_device(CLEAR_SIMULATED_LOCATION_ACTION, {})
+                else:
                     await asyncio.wait_for(self._location.clear(), DEVICE_CALL_TIMEOUT)
-                    await asyncio.sleep(0.3)  # stopLocationSimulation expects no reply; let it flush
-                except Exception as exc:
-                    logger.warning("clearing location failed, closing the session instead: %r", exc)
-                    await self._close()
+                    await asyncio.sleep(0.3)  # the stop expects no reply; let it flush
+            except Exception as exc:
+                await self._close()
+                self._status("error", classify(exc, self.noun)[1])
+                raise
+            await self._close()
             self._status("idle")
             logger.info("%s restored to its real location", self.udid)
 
     async def keepalive(self) -> None:
         """Re-sends the location; reconnects and re-applies it if the connection dropped."""
-        if self.target is None or self.lock.locked() or isinstance(self._location, DtSimulateLocation):
+        if self.target is None or self.lock.locked() or (self._location is not None and self._rsd is None):
             return  # the pre-iOS 17 service keeps the location on its own; re-sending just leaks connections
         async with self.lock:
             if self.target is None:
                 return
             try:
-                if self._location is None:
-                    await self._apply()
+                was_connected = self._connected
+                await self._apply()
+                if not was_connected:
                     logger.info("%s reconnected", self.udid)
-                else:
-                    await asyncio.wait_for(self._location.set(*self.target), DEVICE_CALL_TIMEOUT)
                 if self.phase != "active":
                     self._status("active")
             except Exception as exc:
@@ -223,6 +241,19 @@ class Session:
             self.target = None
             await self._close()
 
+    async def _core_device(self, action: str, payload: dict[str, Any]) -> Any:
+        """Invoke a CoreDevice location action (iOS 17+), opening a short-lived service for it."""
+        service = LocationService(self._rsd)
+        try:
+            await service.connect()
+            return await asyncio.wait_for(
+                service.invoke(SIMULATE_LOCATION_FEATURE, payload, action_identifier=action),
+                DEVICE_CALL_TIMEOUT,
+            )
+        finally:
+            with suppress(Exception):
+                await service.close()
+
     # -- connection management (callers hold the lock) --
 
     async def _apply_with_reconnect(self) -> None:
@@ -238,13 +269,17 @@ class Session:
 
     async def _apply(self) -> None:
         assert self.target is not None
-        if self._location is None:
+        if not self._connected:
             try:
                 await self._open()
             except BaseException:
                 await self._close()
                 raise
-        await asyncio.wait_for(self._location.set(*self.target), DEVICE_CALL_TIMEOUT)
+        latitude, longitude = self.target
+        if self._rsd is not None:
+            await self._core_device(SET_SIMULATED_LOCATION_ACTION, {"latitude": latitude, "longitude": longitude})
+        else:
+            await asyncio.wait_for(self._location.set(latitude, longitude), DEVICE_CALL_TIMEOUT)
 
     async def _open(self) -> None:
         device = self.helper.devices.get(self.udid, {})
@@ -272,12 +307,7 @@ class Session:
             return
 
         self._status("tunneling")
-        rsd = await self._open_tunnel()
-        self._dvt = DvtProvider(rsd)
-        await asyncio.wait_for(self._dvt.connect(), DEVICE_CALL_TIMEOUT)
-        location = LocationSimulation(self._dvt)
-        await asyncio.wait_for(location.connect(), DEVICE_CALL_TIMEOUT)
-        self._location = location
+        self._rsd = await self._open_tunnel()
 
     async def _open_tunnel(self):
         """No-root tunnels first (Apple's remoted, then in-process userspace), then a running tunneld."""
@@ -322,10 +352,9 @@ class Session:
         raise HelperError("TUNNEL", f"Couldn't open a tunnel to the {self.noun}. " + "; ".join(failures))
 
     async def _close(self) -> None:
-        dvt, tunnel, tunneld_rsd, lockdown = self._dvt, self._tunnel, self._tunneld_rsd, self._lockdown
-        self._location = self._dvt = self._tunnel = self._tunneld_rsd = self._lockdown = None
+        tunnel, tunneld_rsd, lockdown = self._tunnel, self._tunneld_rsd, self._lockdown
+        self._location = self._tunnel = self._tunneld_rsd = self._lockdown = self._rsd = None
         closers = [
-            dvt.close if dvt else None,
             tunnel.aclose if tunnel else None,
             tunneld_rsd.close if tunneld_rsd else None,
             lockdown.close if lockdown else None,
@@ -418,9 +447,10 @@ class Helper:
             applied = await session.set_location(latitude, longitude, session.latest_request)
             return None if applied else {"superseded": True}
         if cmd == "clear":
-            session = self.sessions.get(self._require_udid(request))
-            if session is not None:
-                await session.clear()
+            # Always go through a session, even when this run never set a location: the device may
+            # still be simulating one from an earlier run.
+            udid = self._require_udid(request)
+            await self.sessions.setdefault(udid, Session(self, udid)).clear()
             return None
         if cmd == "pair":
             udid = self._require_udid(request)

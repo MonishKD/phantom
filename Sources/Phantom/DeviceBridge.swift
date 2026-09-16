@@ -21,6 +21,7 @@ final class DeviceBridge: ObservableObject {
     @Published private(set) var statuses: [String: SessionStatus] = [:]
     @Published var lastError: HelperFailure?
     @Published private(set) var log: [String] = []
+    @Published private(set) var isRestoring = false
 
     private var process: Process?
     private var helperInput: FileHandle?
@@ -185,8 +186,11 @@ final class DeviceBridge: ObservableObject {
         return report(reply) && reply.superseded != true
     }
 
+    /// Clearing reconnects when needed, so it can take a few seconds and reports failures.
     func restoreRealLocation() async {
         guard let udid = selectedUDID else { return }
+        isRestoring = true
+        defer { isRestoring = false }
         report(await send(["cmd": "clear", "udid": udid]))
     }
 

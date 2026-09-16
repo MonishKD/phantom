@@ -304,11 +304,18 @@ struct SidebarFooter: View {
             Button {
                 Task { await bridge.restoreRealLocation() }
             } label: {
-                Label("Restore Real Location", systemImage: "location.slash")
-                    .frame(maxWidth: .infinity)
+                HStack(spacing: 6) {
+                    if bridge.isRestoring {
+                        ProgressView().controlSize(.small)
+                    }
+                    Label("Restore Real Location", systemImage: "location.slash")
+                }
+                .frame(maxWidth: .infinity)
             }
             .controlSize(.large)
-            .disabled(bridge.activeCoordinate == nil)
+            // Stays available whenever a device is connected: the device can still be simulating a
+            // location this run never set, and the app can't know that until it asks.
+            .disabled(!bridge.canTeleport || bridge.isRestoring)
             .padding(12)
         }
         .background(.bar)
