@@ -27,7 +27,10 @@ final class DeviceBridge: ObservableObject {
     enum RestoreNotice {
         case restoring
         case restored
+        case restoredWithoutMacLocation
     }
+
+    private let macLocation = MacLocation()
 
     private var process: Process?
     private var helperInput: FileHandle?
@@ -188,6 +191,7 @@ final class DeviceBridge: ObservableObject {
             lastError = HelperFailure(code: "NO_DEVICE", message: "No device is selected.")
             return false
         }
+        macLocation.prepare()  // restoring later uses this Mac's location; ask while the context is clear
         let reply = await send(["cmd": "set", "udid": udid, "lat": coordinate.latitude, "lon": coordinate.longitude])
         return report(reply) && reply.superseded != true
     }
@@ -197,15 +201,26 @@ final class DeviceBridge: ObservableObject {
         guard let udid = selectedUDID else { return }
         isRestoring = true
         restoreNotice = .restoring
-        let restored = report(await send(["cmd": "clear", "udid": udid]))
+        var request: [String: Any] = ["cmd": "clear", "udid": udid]
+        // The device is next to this Mac, so the Mac's position stands in for its real one. The helper
+        // settles the device there before stopping the simulation; see Session.clear for why.
+        let here = await macLocation.current()
+        if let here {
+            request["anchor_lat"] = here.coordinate.latitude
+            request["anchor_lon"] = here.coordinate.longitude
+        } else {
+            appendLog("This Mac's location isn't available, so restoring without it. After a far-away location the device may keep showing it until restarted.")
+        }
+        let restored = report(await send(request))
         isRestoring = false
         guard restored else {
             restoreNotice = nil  // the error banner takes over
             return
         }
-        restoreNotice = .restored
-        try? await Task.sleep(for: .seconds(2.5))
-        if restoreNotice == .restored { restoreNotice = nil }
+        let notice: RestoreNotice = here == nil ? .restoredWithoutMacLocation : .restored
+        restoreNotice = notice
+        try? await Task.sleep(for: .seconds(here == nil ? 8 : 2.5))
+        if restoreNotice == notice { restoreNotice = nil }
     }
 
     func pair() async {

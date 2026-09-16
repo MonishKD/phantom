@@ -58,6 +58,8 @@ That's it. Clicking the map now moves the device.
 3. Turn off **Instant** if you'd rather drop a pin first and press **Teleport Here** yourself.
 4. Click **Restore Real Location** when you're done; it takes a few seconds. Quitting Phantom also restores it.
 
+The first time you teleport, macOS asks whether Phantom may use this Mac's location. Allow it: Phantom briefly settles the device on the Mac's real position before letting go. Without that step, a device restored from somewhere far away can keep showing the fake spot until it restarts.
+
 The first teleport after connecting takes a few seconds while Phantom mounts the disk image and opens a tunnel. Each click after that applies immediately.
 
 Leave Phantom open while you need the location: it clears the simulation when you quit, re-sends the location every 15 seconds, and reconnects by itself if the cable or tunnel drops.
@@ -114,6 +116,7 @@ Either way, apps on the device receive the location through CoreLocation, marked
 - **"Couldn't open a tunnel":** reconnect the cable and unlock the device. As a last resort, run a privileged tunnel in a terminal and try again:
   `sudo ~/Library/Application\ Support/Phantom/venv/bin/python -m pymobiledevice3 remote tunneld`
 - **"Couldn't mount the developer disk image":** check your internet connection, since Apple signs the image for each device.
+- **The device keeps the fake spot after restoring:** allow Phantom in System Settings › Privacy & Security › Location Services and restore again, or restart the device.
 - **The location is still spoofed after a crash:** reopen Phantom and click **Restore Real Location**, or restart the device.
 
 ## Layout

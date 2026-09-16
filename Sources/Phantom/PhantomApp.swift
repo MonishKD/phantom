@@ -50,6 +50,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         true
     }
 
+    private var terminationAnswered = false
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        MainActor.assumeIsolated {
+            // A proper restore takes several seconds, longer than applicationWillTerminate can wait, so
+            // quitting holds off until the device has its real location back (at most 20 seconds).
+            guard let bridge = AppDelegate.bridge, bridge.isRestoring || bridge.activeCoordinate != nil else {
+                return .terminateNow
+            }
+            Task { @MainActor in
+                if bridge.isRestoring {
+                    while bridge.isRestoring { try? await Task.sleep(for: .milliseconds(200)) }
+                } else {
+                    await bridge.restoreRealLocation()
+                }
+                self.answerTermination()
+            }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(20))
+                self.answerTermination()
+            }
+            return .terminateLater
+        }
+    }
+
+    @MainActor private func answerTermination() {
+        guard !terminationAnswered else { return }
+        terminationAnswered = true
+        NSApp.reply(toApplicationShouldTerminate: true)
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         // Give the helper a moment to hand the device its real location back.
         MainActor.assumeIsolated {

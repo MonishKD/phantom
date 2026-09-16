@@ -28,6 +28,10 @@
 	<string>14.0</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSLocationUsageDescription</key>
+	<string>Phantom uses this Mac's location to hand your iPhone or iPad its real location back when you restore it.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Phantom uses this Mac's location to hand your iPhone or iPad its real location back when you restore it.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

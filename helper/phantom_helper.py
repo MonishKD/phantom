@@ -3,6 +3,7 @@
 
 Protocol (newline-delimited JSON):
   stdin   {"id": 1, "cmd": "set", "udid": "...", "lat": 48.8584, "lon": 2.2945}
+          {"id": 2, "cmd": "clear", "udid": "...", "anchor_lat": 40.71, "anchor_lon": -74.0}  (anchor optional)
   stdout  {"id": 1, "ok": true}  |  {"id": 1, "ok": false, "error": {"code": "...", "message": "..."}}
           {"event": "devices", "devices": [...]}  |  {"event": "status", "status": {...}}
   stderr  human-readable logging
@@ -102,6 +103,7 @@ DEVICE_POLL_INTERVAL = 2
 DETAIL_REFRESH_INTERVAL = 8  # re-read unpaired / Developer Mode-off devices so the UI notices changes
 DEVICE_CALL_TIMEOUT = 20
 TUNNEL_TIMEOUT = 45
+ANCHOR_SETTLE_SECONDS = 5  # how long a restore holds the device at its true position before letting go
 
 # CoreDevice's location feature, used for both set and clear on iOS/iPadOS 17+. The older DVT
 # instruments service can also set a location, but the two track separate state: a DVT-set location
@@ -235,7 +237,8 @@ class Session:
             logger.info("%s now at %.6f, %.6f", self.udid, latitude, longitude)
             return True
 
-    async def clear(self) -> None:
+    async def clear(self, anchor: Optional[tuple[float, float]] = None) -> None:
+        """Stops the simulation. ``anchor`` is the device's true position (in practice, the Mac's)."""
         async with self.lock:
             self.latest_request += 1  # drop any queued teleports
             self.target = None
@@ -245,6 +248,13 @@ class Session:
                     # No live connection — a relaunched app, or a session that dropped. Open one
                     # anyway so a location left over from an earlier run can still be cleared.
                     await self._open()
+                if anchor is not None:
+                    # Seen on iPadOS 27: once a far-away simulation stops, locationd keeps reporting
+                    # the fake spot until the device restarts, while nearby ones restore cleanly (its
+                    # logs confirm the simulation itself does stop). Settling on the true position
+                    # first turns every restore into the nearby case.
+                    await self._send_location(*anchor)
+                    await asyncio.sleep(ANCHOR_SETTLE_SECONDS)
                 await self._clear_now()
             except Exception as exc:
                 await self._close()
@@ -329,7 +339,9 @@ class Session:
             except BaseException:
                 await self._close()
                 raise
-        latitude, longitude = self.target
+        await self._send_location(*self.target)
+
+    async def _send_location(self, latitude: float, longitude: float) -> None:
         if self._rsd is not None:
             await self._core_device(SET_SIMULATED_LOCATION_ACTION, {"latitude": latitude, "longitude": longitude})
         else:
@@ -505,7 +517,10 @@ class Helper:
             # Always go through a session, even when this run never set a location: the device may
             # still be simulating one from an earlier run.
             udid = self._require_udid(request)
-            await self.sessions.setdefault(udid, Session(self, udid)).clear()
+            anchor = None
+            if "anchor_lat" in request and "anchor_lon" in request:
+                anchor = self._require_coordinate({"lat": request["anchor_lat"], "lon": request["anchor_lon"]})
+            await self.sessions.setdefault(udid, Session(self, udid)).clear(anchor)
             return None
         if cmd == "pair":
             udid = self._require_udid(request)

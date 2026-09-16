@@ -229,8 +229,22 @@ struct RestoreToast: View {
                     Text("Real location restored")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.textPrimary)
+                case .restoredWithoutMacLocation:
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(Theme.success)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Real location restored")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.textPrimary)
+                        Text("Still showing the old spot? Allow Phantom in System Settings › Privacy & Security › Location Services, then restore again.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
+            .frame(maxWidth: 460, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
             .floatingPanel()
