@@ -22,7 +22,10 @@ if pgrep -x Phantom >/dev/null; then
 fi
 
 rm -rf "$APP"
-cp -R "$ROOT/dist/Phantom.app" "$APP"
+# Move, not copy: a leftover dist/Phantom.app shows up as a second Phantom in Spotlight and Launchpad.
+mv "$ROOT/dist/Phantom.app" "$APP"
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
+    -u "$ROOT/dist/Phantom.app" >/dev/null 2>&1 || true
 touch "$APP"  # nudge Spotlight and Launchpad to re-index
 
 echo "==> Installed $APP"
