@@ -21,6 +21,9 @@ enum Theme {
 
     /// Panels floating over the map: near-black, with a trace of the map showing through.
     static let overlay = Color.black.opacity(0.8)
+
+    /// Tint for the glass panels, dark enough to keep the jet-black look.
+    static let glassTint = Color.black.opacity(0.55)
 }
 
 // MARK: - Buttons
@@ -145,13 +148,12 @@ extension View {
             .overlay(shape.strokeBorder(Theme.border, lineWidth: 1))
     }
 
-    /// A black glass panel for controls floating over the map.
+    /// A dark glass panel for controls floating over the map, on macOS 26's Liquid Glass.
     func floatingPanel(cornerRadius: CGFloat = 14) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         return self
-            .background(Theme.overlay, in: shape)
-            .background(.ultraThinMaterial, in: shape)
+            .glassEffect(.regular.tint(Theme.glassTint), in: shape)
             .overlay(shape.strokeBorder(Theme.borderStrong, lineWidth: 1))
-            .shadow(color: .black.opacity(0.55), radius: 20, y: 8)
+            .shadow(color: .black.opacity(0.45), radius: 18, y: 6)
     }
 }

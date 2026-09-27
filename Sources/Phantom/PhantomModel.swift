@@ -14,7 +14,7 @@ final class PhantomModel: ObservableObject {
 
     private let bridge: DeviceBridge
     private let recents: RecentPlaces
-    private let geocoder = CLGeocoder()
+    private var nameLookup: Task<Void, Never>?
     private var teleportsInFlight = 0
 
     init(bridge: DeviceBridge, recents: RecentPlaces) {
@@ -83,25 +83,30 @@ final class PhantomModel: ObservableObject {
     }
 
     private func resolveName(for place: SavedPlace) {
-        geocoder.cancelGeocode()
-        let location = CLLocation(latitude: place.latitude, longitude: place.longitude)
-        geocoder.reverseGeocodeLocation(location) { [weak self] placemarks, _ in
-            guard let placemark = placemarks?.first, let name = Self.describe(placemark) else { return }
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    if self.pin?.id == place.id { self.pin?.name = name }
-                    self.recents.rename(place.id, to: name)
-                }
-            }
+        nameLookup?.cancel()
+        nameLookup = Task { [weak self] in
+            let location = CLLocation(latitude: place.latitude, longitude: place.longitude)
+            guard let request = MKReverseGeocodingRequest(location: location),
+                  let items = try? await request.mapItems,
+                  let name = items.first.flatMap(Self.describe),
+                  !Task.isCancelled,
+                  let self
+            else { return }
+            if pin?.id == place.id { pin?.name = name }
+            recents.rename(place.id, to: name)
         }
     }
 
-    nonisolated private static func describe(_ placemark: CLPlacemark) -> String? {
-        var parts: [String] = []
-        for part in [placemark.name, placemark.locality, placemark.country] {
-            if let part, !part.isEmpty, !parts.contains(part) { parts.append(part) }
+    private static func describe(_ item: MKMapItem) -> String? {
+        let name = item.name?.trimmingCharacters(in: .whitespaces)
+        let address = item.address?.shortAddress ?? item.address?.fullAddress
+        switch (name, address) {
+        case let (name?, address?) where !name.isEmpty && !address.contains(name):
+            return "\(name), \(address)"
+        case let (name?, _) where !name.isEmpty:
+            return name
+        default:
+            return address
         }
-        return parts.isEmpty ? nil : parts.joined(separator: ", ")
     }
 }

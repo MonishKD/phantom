@@ -21,7 +21,8 @@ struct MapPane: View {
                         .tint(Theme.accent)
                 }
             }
-            .mapStyle(satellite ? .hybrid(elevation: .realistic) : .standard(elevation: .realistic, emphasis: .muted))
+            // Flat rather than 3D: the terrain mesh costs GPU time continuously and buys nothing here.
+            .mapStyle(satellite ? .hybrid(elevation: .flat) : .standard(elevation: .flat, emphasis: .muted))
             .mapControls {}  // replaced by MapControlBar, which matches the rest of the UI
             .onMapCameraChange(frequency: .onEnd) { context in
                 model.visibleRegion = context.region
@@ -399,27 +400,60 @@ struct ActivityLog: View {
 }
 
 /// Pulsing dot marking where the device currently thinks it is.
-/// Driven by TimelineView because the Command Line Tools SDK ships without the @State macro plugin.
 struct SpoofedLocationDot: View {
-    private let period = 1.8
-
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
-            let progress = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period) / period
-            ZStack {
-                Circle()
-                    .fill(Theme.accent.opacity(0.35))
-                    .frame(width: 60, height: 60)
-                    .scaleEffect(0.3 + 0.7 * progress)
-                    .opacity(1 - progress)
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: 22, height: 22)
-                    .shadow(color: .black.opacity(0.5), radius: 3)
-                Circle()
-                    .fill(Theme.accent)
-                    .frame(width: 15, height: 15)
-            }
+        ZStack {
+            PulseRing(color: Theme.accent.opacity(0.35), diameter: 60)
+                .frame(width: 60, height: 60)
+                .allowsHitTesting(false)
+            Circle()
+                .fill(Color.white)
+                .frame(width: 22, height: 22)
+                .shadow(color: .black.opacity(0.5), radius: 3)
+            Circle()
+                .fill(Theme.accent)
+                .frame(width: 15, height: 15)
         }
     }
+}
+
+/// The expanding ring, animated by Core Animation inside an AppKit layer.
+///
+/// A SwiftUI animation here costs ~13% CPU for as long as a location is active: the dot sits in a
+/// Map annotation, and MapKit re-hosts an animating SwiftUI view every frame. A layer animation
+/// runs in the render server instead, with nothing to re-host.
+private struct PulseRing: NSViewRepresentable {
+    let color: Color
+    let diameter: CGFloat
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: CGRect(x: 0, y: 0, width: diameter, height: diameter))
+        view.wantsLayer = true
+
+        let ring = CAShapeLayer()
+        ring.path = CGPath(ellipseIn: CGRect(x: 0, y: 0, width: diameter, height: diameter), transform: nil)
+        ring.fillColor = NSColor(color).cgColor
+        ring.bounds = CGRect(x: 0, y: 0, width: diameter, height: diameter)
+        ring.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        ring.position = CGPoint(x: diameter / 2, y: diameter / 2)
+        ring.opacity = 0
+
+        let scale = CABasicAnimation(keyPath: "transform.scale")
+        scale.fromValue = 0.3
+        scale.toValue = 1.0
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 1.0
+        fade.toValue = 0.0
+        let pulse = CAAnimationGroup()
+        pulse.animations = [scale, fade]
+        pulse.duration = 1.8
+        pulse.repeatCount = .infinity
+        pulse.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        ring.add(pulse, forKey: "pulse")
+
+        view.layer?.addSublayer(ring)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }

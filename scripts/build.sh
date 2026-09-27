@@ -7,7 +7,9 @@ APP="$ROOT/dist/Phantom.app"
 CONFIG="${CONFIG:-release}"
 
 cd "$ROOT"
-swift build -c "$CONFIG"
+# Record the current SDK in the binary, not just the deployment target: macOS gates newer system
+# behaviour on the SDK an app was linked against, so without this Phantom is treated as a legacy app.
+swift build -c "$CONFIG" -Xlinker -platform_version -Xlinker macos -Xlinker 26.0 -Xlinker 27.0
 BIN_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
 
 rm -rf "$APP"

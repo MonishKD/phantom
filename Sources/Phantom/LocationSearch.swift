@@ -26,7 +26,7 @@ final class LocationSearch: NSObject, ObservableObject {
         guard let response = try? await MKLocalSearch(request: request).start(),
               let item = response.mapItems.first
         else { return nil }
-        return (item.placemark.coordinate, item.name ?? completion.title)
+        return (item.location.coordinate, item.name ?? item.address?.shortAddress ?? completion.title)
     }
 
     private func queryChanged() {

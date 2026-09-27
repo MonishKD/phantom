@@ -10,7 +10,7 @@ Phantom is a macOS app that sets your iPhone's or iPad's GPS location to whereve
 
 ## What you need
 
-- **A Mac** running macOS 14 or later with the Xcode Command Line Tools. Full Xcode isn't needed.
+- **A Mac** running macOS 26 or later with the Xcode Command Line Tools. Full Xcode isn't needed. (Phantom builds against the current SDK and uses MapKit's current geocoding and the system's glass materials.)
 - **An iPhone or iPad** and a cable. Wi-Fi-only iPads work too, since the location is injected in software.
 - **Internet access** the first time, for the Python components and for the developer disk image that Apple signs per device.
 
