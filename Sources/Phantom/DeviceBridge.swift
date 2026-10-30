@@ -217,10 +217,17 @@ final class DeviceBridge: ObservableObject {
             restoreNotice = nil  // the error banner takes over
             return
         }
-        let notice: RestoreNotice = here == nil ? .restoredWithoutMacLocation : .restored
-        restoreNotice = notice
-        try? await Task.sleep(for: .seconds(here == nil ? 8 : 2.5))
-        if restoreNotice == notice { restoreNotice = nil }
+        guard here != nil else {
+            restoreNotice = .restoredWithoutMacLocation  // has instructions; stays until dismissed
+            return
+        }
+        restoreNotice = .restored
+        try? await Task.sleep(for: .seconds(2.5))
+        if restoreNotice == .restored { restoreNotice = nil }
+    }
+
+    func dismissRestoreNotice() {
+        restoreNotice = nil
     }
 
     func pair() async {

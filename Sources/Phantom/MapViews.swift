@@ -17,8 +17,9 @@ struct MapPane: View {
                     }
                 }
                 if let pin = model.pin, !isActive(pin) {
+                    // Neutral, so blue only ever means where the device is.
                     Marker(pin.name, systemImage: "mappin", coordinate: pin.coordinate)
-                        .tint(Theme.accent)
+                        .tint(Color(white: 0.85))
                 }
             }
             // Flat rather than 3D: the terrain mesh costs GPU time continuously and buys nothing here.
@@ -31,20 +32,21 @@ struct MapPane: View {
                 guard let coordinate = proxy.convert(point, from: .local) else { return }
                 model.choose(coordinate, teleport: teleportOnClick && bridge.canTeleport, flyTo: false)
             }
+            // An inset rather than an overlay, so MapKit lifts its logo and legal link above the card.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                VStack(spacing: 10) {
+                    RestoreToast()
+                    ErrorBanner()
+                    PlaceCard()
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
+            }
         }
         .overlay(alignment: .topTrailing) {
             MapControlBar()
                 .padding(.top, 36)  // below the window's title bar strip
                 .padding(.trailing, 16)
-        }
-        .overlay(alignment: .bottom) {
-            VStack(spacing: 10) {
-                RestoreToast()
-                ErrorBanner()
-                PlaceCard()
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
         }
         .overlay {
             if bridge.helperState == .notInstalled {
@@ -85,7 +87,7 @@ struct PlaceCard: View {
             if let pin = model.pin {
                 Image(systemName: "mappin.circle.fill")
                     .font(.system(size: 20))
-                    .foregroundStyle(Theme.accent)
+                    .foregroundStyle(Theme.textPrimary)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(pin.name)
                         .font(.system(size: 13, weight: .semibold))
@@ -105,6 +107,7 @@ struct PlaceCard: View {
                 }
                 .buttonStyle(IconButtonStyle())
                 .help("Copy coordinates")
+                .accessibilityLabel("Copy Coordinates")
 
                 if model.isTeleporting {
                     ProgressView().controlSize(.small)
@@ -129,7 +132,7 @@ struct PlaceCard: View {
 
             Toggle("Instant", isOn: $teleportOnClick)
                 .toggleStyle(.switch)
-                .controlSize(.mini)
+                .controlSize(.small)
                 .tint(Theme.accent)
                 .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(Theme.textSecondary)
@@ -160,9 +163,11 @@ struct MapControlBar: View {
             Button { model.zoom(by: 0.5) } label: { Image(systemName: "plus") }
                 .buttonStyle(IconButtonStyle())
                 .help("Zoom in")
+                .accessibilityLabel("Zoom In")
             Button { model.zoom(by: 2) } label: { Image(systemName: "minus") }
                 .buttonStyle(IconButtonStyle())
                 .help("Zoom out")
+                .accessibilityLabel("Zoom Out")
             divider
             Button {
                 if let active = bridge.activeCoordinate { model.fly(to: active) }
@@ -172,9 +177,11 @@ struct MapControlBar: View {
             .buttonStyle(IconButtonStyle())
             .disabled(bridge.activeCoordinate == nil)
             .help("Center on the simulated location")
+            .accessibilityLabel("Center on Device")
             Button { model.showActivity.toggle() } label: { Image(systemName: "list.bullet.rectangle") }
                 .buttonStyle(IconButtonStyle())
                 .help("Helper activity log")
+                .accessibilityLabel("Activity")
                 .popover(isPresented: $model.showActivity, arrowEdge: .bottom) {
                     ActivityLog()
                 }
@@ -243,6 +250,15 @@ struct RestoreToast: View {
                             .foregroundStyle(Theme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                    Spacer(minLength: 8)
+                    // Holds instructions, so it waits to be dismissed instead of timing out.
+                    Button {
+                        bridge.dismissRestoreNotice()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(IconButtonStyle())
+                    .accessibilityLabel("Dismiss")
                 }
             }
             .frame(maxWidth: 460, alignment: .leading)
@@ -285,6 +301,7 @@ struct ErrorBanner: View {
                     Image(systemName: "xmark")
                 }
                 .buttonStyle(IconButtonStyle())
+                .accessibilityLabel("Dismiss")
             }
             .padding(14)
             .frame(maxWidth: 560)
@@ -449,7 +466,10 @@ private struct PulseRing: NSViewRepresentable {
         pulse.duration = 1.8
         pulse.repeatCount = .infinity
         pulse.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        ring.add(pulse, forKey: "pulse")
+        // A repeating scale animation is exactly what Reduce Motion asks apps to drop.
+        if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            ring.add(pulse, forKey: "pulse")
+        }
 
         view.layer?.addSublayer(ring)
         return view

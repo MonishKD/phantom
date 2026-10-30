@@ -33,6 +33,48 @@ struct PhantomApp: App {
                 .frame(minWidth: 960, minHeight: 620)
         }
         .windowStyle(.hiddenTitleBar)
+        .commands {
+            LocationCommands(bridge: bridge, model: model)
+        }
+    }
+}
+
+/// Every action in the window, reachable from the menu bar and the keyboard.
+struct LocationCommands: Commands {
+    @ObservedObject var bridge: DeviceBridge
+    @ObservedObject var model: PhantomModel
+    @AppStorage("satelliteMap") private var satellite = false
+
+    var body: some Commands {
+        CommandMenu("Location") {
+            Button("Teleport to Pin") { model.teleportToPin() }
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(!bridge.canTeleport || model.pin == nil)
+            Button("Restore Real Location") { Task { await bridge.restoreRealLocation() } }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(!bridge.canTeleport || bridge.isRestoring)
+            Divider()
+            Button("Center on Device") {
+                if let active = bridge.activeCoordinate { model.fly(to: active) }
+            }
+            .keyboardShortcut("l", modifiers: .command)
+            .disabled(bridge.activeCoordinate == nil)
+        }
+        CommandGroup(after: .toolbar) {
+            Picker("Map Style", selection: $satellite) {
+                Text("Map").tag(false)
+                Text("Satellite").tag(true)
+            }
+            .pickerStyle(.inline)
+            Divider()
+            Button("Zoom In") { model.zoom(by: 0.5) }
+                .keyboardShortcut("+", modifiers: .command)
+            Button("Zoom Out") { model.zoom(by: 2) }
+                .keyboardShortcut("-", modifiers: .command)
+            Divider()
+            Button("Show Activity") { model.showActivity.toggle() }
+                .keyboardShortcut("a", modifiers: [.command, .option])
+        }
     }
 }
 

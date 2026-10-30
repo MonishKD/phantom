@@ -36,7 +36,6 @@ struct Sidebar: View {
                 .padding(.bottom, 20)
             }
             .scrollIndicators(.never)
-            SidebarFooter()
         }
         .background(Theme.background)
     }
@@ -46,15 +45,10 @@ struct SidebarHeader: View {
     var body: some View {
         HStack(spacing: 12) {
             PhantomLogo(size: 26)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("PHANTOM")
-                    .font(.system(size: 15, weight: .heavy))
-                    .tracking(3.4)
-                    .foregroundStyle(Theme.textPrimary)
-                Text("Location for iPhone & iPad")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.textTertiary)
-            }
+            Text("PHANTOM")
+                .font(.system(size: 15, weight: .heavy))
+                .tracking(3.4)
+                .foregroundStyle(Theme.textPrimary)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 18)
@@ -178,6 +172,10 @@ struct DeviceCard: View {
 
             StatusRow(status: status, noun: device.noun, waitingForDeveloperMode: device.paired && device.developerMode == false)
 
+            if device.paired && device.developerMode != false {
+                RestoreButton()
+            }
+
             if !device.paired {
                 Callout(icon: "lock.fill", tint: Theme.warning) {
                     Text("Unlock your \(device.noun) and tap **Trust** to pair it with this Mac.")
@@ -222,7 +220,7 @@ struct DeveloperModeGuide: View {
     private func step(_ number: Int, _ text: LocalizedStringKey) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text("\(number)")
-                .font(.system(size: 9.5, weight: .bold))
+                .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(Color.black)
                 .frame(width: 16, height: 16)
                 .background(Theme.warning, in: Circle())
@@ -297,7 +295,7 @@ extension SessionPhase {
 
     var color: Color {
         switch self {
-        case .active: Theme.success
+        case .active: Theme.accent  // the same blue as the device's dot on the map
         case .error: Theme.danger
         case .reconnecting: Theme.warning
         default: Theme.textTertiary
@@ -342,8 +340,11 @@ struct SearchPanel: View {
                         search.clear()
                     } label: {
                         Image(systemName: "xmark.circle.fill")
+                            .frame(width: 20, height: 20)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Clear Search")
                     .foregroundStyle(Theme.textTertiary)
                 }
             }
@@ -450,7 +451,9 @@ struct RecentRow: View {
     }
 }
 
-struct SidebarFooter: View {
+/// Kept in the device card rather than at the bottom of the sidebar, where a window dragged
+/// partly off screen can hide it.
+struct RestoreButton: View {
     @EnvironmentObject private var bridge: DeviceBridge
 
     var body: some View {
@@ -461,16 +464,10 @@ struct SidebarFooter: View {
                 Image(systemName: "location.slash.fill")
                 Text("Restore Real Location")
             }
-            .padding(.vertical, 3)
         }
         .buttonStyle(PhantomButtonStyle(kind: .secondary, fullWidth: true))
         // Stays available whenever a device is connected: the device can still be simulating a
         // location this run never set, and the app can't know that until it asks.
         .disabled(!bridge.canTeleport || bridge.isRestoring)
-        .padding(16)
-        .background(Theme.background)
-        .overlay(alignment: .top) {
-            Rectangle().fill(Theme.border).frame(height: 1)
-        }
     }
 }
